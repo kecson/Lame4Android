@@ -4,6 +4,8 @@ import android.content.Context;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.Message;
 import android.text.format.DateFormat;
 import android.util.Log;
@@ -16,8 +18,8 @@ public class Mp3Recorder {
 
     private static final String TAG = Mp3Recorder.class.getSimpleName();
 
-
-    private static final int DEFAULT_SAMPLING_RATE = 22050;
+    //    44100Hz是当前唯一能保证在所有设备上工作的采样率，在一些设备上还有22050, 16000或11025。
+    private static final int DEFAULT_SAMPLING_RATE = 44100;
 
     private static final int FRAME_COUNT = 160;
 
@@ -46,6 +48,8 @@ public class Mp3Recorder {
 
     private boolean mIsRecording = false;
     private Context mContext;
+    private OnMaxDurationListener mMaxDurationListener;
+    private int mMaxDurationSecond;
 
     public Mp3Recorder(Context context, int samplingRate, int channelConfig, PCMFormat audioFormat) {
         mContext = context.getApplicationContext();
@@ -67,16 +71,20 @@ public class Mp3Recorder {
      * thread.
      */
     public void startRecording() throws IOException {
-        startRecording(null);
+        startRecording(-1);
+    }
+
+    public void startRecording(int max_duration_second) throws IOException {
+        startRecording(max_duration_second, null);
     }
 
     /**
      * Start recording. Create an encoding thread. Start record from this
      * thread.
      */
-    public void startRecording(File mp3File) throws IOException {
+    public void startRecording(int max_duration_second, File mp3File) throws IOException {
         if (mIsRecording) return;
-
+        mMaxDurationSecond = max_duration_second;
         Log.i(TAG, "Start recording, BufferSize = " + mBufferSize);
         // Initialize mAudioRecord if it's null.
         if (mAudioRecord == null) {
@@ -91,6 +99,24 @@ public class Mp3Recorder {
             @Override
             public void run() {
                 mIsRecording = true;
+                if (mMaxDurationSecond > 0) {
+                    new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (mIsRecording) {
+                                try {
+                                    stopRecording();
+                                    if (mMaxDurationListener != null) {
+                                        mMaxDurationListener.onMaxDuration(mMaxDurationSecond);
+                                    }
+                                } catch (IOException e) {
+                                    e.printStackTrace();
+                                }
+                            }
+                        }
+                    }, mMaxDurationSecond * 1000 + 100);
+                }
+
                 while (mIsRecording) {
                     int bytes = mAudioRecord.read(mBuffer, 0, mBufferSize);
                     if (bytes > 0) {
@@ -127,6 +153,7 @@ public class Mp3Recorder {
 
             }
         }.start();
+
     }
 
     /**
@@ -160,7 +187,6 @@ public class Mp3Recorder {
         mAudioRecord = new AudioRecord(MediaRecorder.AudioSource.MIC,
                 mSamplingRate, mChannelConfig, mAudioFormat.getAudioFormat(),
                 mBufferSize);
-
         // Setup RingBuffer. Currently is 10 times size of hardware buffer
         // Initialize buffer to hold data
         mRingBuffer = new RingBuffer(10 * mBufferSize);
@@ -198,4 +224,11 @@ public class Mp3Recorder {
         return mMp3File;
     }
 
+    public interface OnMaxDurationListener {
+        void onMaxDuration(int max_duration_second);
+    }
+
+    public void setOnMaxDurationListener(OnMaxDurationListener listener) {
+        mMaxDurationListener = listener;
+    }
 }

@@ -16,7 +16,7 @@
         android:theme="@style/AppTheme">
         <activity
             android:name="com.kecson.sample.MainActivity"
-            android:label="@string/record_mp3">
+            >
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
 
