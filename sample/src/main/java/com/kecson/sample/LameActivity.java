@@ -33,7 +33,7 @@ public class LameActivity extends AppCompatActivity {
     public static final int NUM_CHANNELS = 1;
     public static final int SAMPLE_RATE = 44100;
     public static final int BITRATE = 128;
-    public static final int QUALITY = 2;
+    public static final int QUALITY = 7;
     private AudioRecord mRecorder;
     private short[] mBuffer;
     private final String startRecordingLabel = "开始录音";

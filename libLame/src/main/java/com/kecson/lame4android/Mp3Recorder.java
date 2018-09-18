@@ -50,6 +50,8 @@ public class Mp3Recorder {
     private Context mContext;
     private OnMaxDurationListener mMaxDurationListener;
     private int mMaxDurationSecond;
+    private int mVolume;
+    private Thread mAudioThread;
 
     public Mp3Recorder(Context context, int samplingRate, int channelConfig, PCMFormat audioFormat) {
         mContext = context.getApplicationContext();
@@ -93,8 +95,7 @@ public class Mp3Recorder {
             mMp3File = mp3File;
         }
         mAudioRecord.startRecording();
-
-        new Thread() {
+        mAudioThread = new Thread() {
 
             @Override
             public void run() {
@@ -121,39 +122,100 @@ public class Mp3Recorder {
                     int bytes = mAudioRecord.read(mBuffer, 0, mBufferSize);
                     if (bytes > 0) {
                         mRingBuffer.write(mBuffer, bytes);
+                        mVolume = (int) calculateVolume(mBuffer);
+//                        Log.d(TAG, "run: Volume=" + mVolume);
                     }
                 }
+                release();
 
-                // release and finalize mAudioRecord
-                try {
-                    mAudioRecord.stop();
-                    mAudioRecord.release();
-                    mAudioRecord = null;
-
-                    // stop the encoding thread and try to wait
-                    // until the thread finishes its job
-                    Message msg = Message.obtain(mEncodeThread.getStopHandler(),
-                            EncodeThread.PROCESS_STOP);
-                    msg.sendToTarget();
-
-//                    Log.d(TAG, "waiting for encoding thread");
-                    mEncodeThread.join();
-                    Log.d(TAG, "done encoding thread");
-                } catch (InterruptedException e) {
-                    Log.e(TAG, "Failed to join encode thread");
-                } finally {
-                    if (mFos != null) {
-                        try {
-                            mFos.close();
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                }
 
             }
-        }.start();
+        };
+        mAudioThread.start();
 
+    }
+
+    private void release() {
+        // release and finalize mAudioRecord
+        try {
+
+            if (mAudioRecord != null) {
+                mAudioRecord.stop();
+                mAudioRecord.release();
+                mAudioRecord = null;
+            }
+
+
+            // stop the encoding thread and try to wait
+            // until the thread finishes its job
+            Message msg = Message.obtain(mEncodeThread.getStopHandler(),
+                    EncodeThread.PROCESS_STOP);
+            mEncodeThread.getStopHandler().sendMessageAtFrontOfQueue(msg);
+
+//                    Log.d(TAG, "waiting for encoding thread");
+            mEncodeThread.join();
+//                    Log.d(TAG, "done encoding thread");
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to join encode thread");
+        } finally {
+            if (mFos != null) {
+                try {
+                    mFos.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    public int getMaxAmplitude() {
+        return mVolume;
+    }
+
+    /**
+     * 此计算方法来自samsung开发范例
+     *
+     * @param buffer
+     * @param readSize
+     * @see {@literal https://developer.samsung.com/technical-doc/view.do?v=T000000086}
+     */
+    private int calculateRealVolume(short[] buffer, int readSize) {
+        int sum = 0;
+        int volume = 0;
+        if (buffer == null) {
+            return volume;
+        }
+        for (int i = 0; i < readSize; i++) {
+            sum += buffer[i] * buffer[i];
+        }
+        if (readSize > 0) {
+            double amplitude = sum / readSize;
+            volume = (int) Math.sqrt(amplitude);
+        }
+        return volume;
+    }
+
+
+    private double calculateVolume(byte[] buffer) {
+        if (buffer == null) {
+            return 0;
+        }
+        double sumVolume = 0.0;
+        double avgVolume = 0.0;
+        double volume = 0.0;
+        for (int i = 0; i < buffer.length; i += 2) {
+            int v1 = buffer[i] & 0xFF;
+            int v2 = buffer[i + 1] & 0xFF;
+            int temp = v1 + (v2 << 8);// 小端
+            if (temp >= 0x8000) {
+                temp = 0xffff - temp;
+            }
+            sumVolume += Math.abs(temp);
+        }
+
+        avgVolume = sumVolume / buffer.length / 2;
+        volume = Math.log10(1 + avgVolume) * 10;
+        return volume;
     }
 
     /**
@@ -162,6 +224,7 @@ public class Mp3Recorder {
     public void stopRecording() throws IOException {
         Log.d(TAG, "stop recording");
         mIsRecording = false;
+        release();
     }
 
     /**
@@ -222,6 +285,10 @@ public class Mp3Recorder {
 
     public File getMp3File() {
         return mMp3File;
+    }
+
+    public boolean isRecording() {
+        return mIsRecording;
     }
 
     public interface OnMaxDurationListener {

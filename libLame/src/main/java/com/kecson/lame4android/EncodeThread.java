@@ -116,7 +116,7 @@ public class EncodeThread extends Thread implements AudioRecord.OnRecordPosition
      */
     private int processData() {
         int bytes = mRingBuffer.read(mBuffer, mBufferSize);
-        Log.d(TAG, "Read size: " + bytes);
+//        Log.d(TAG, "Read size: " + bytes);
         if (bytes > 0) {
             short[] innerBuf = new short[bytes / 2];
             ByteBuffer.wrap(mBuffer).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(innerBuf);

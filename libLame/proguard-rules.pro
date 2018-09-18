@@ -19,3 +19,27 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+-keepparameternames
+#不缩减代码
+-dontshrink
+#不优化代码
+-dontoptimize
+
+-keep class com.kecson.lame4android.Lame{
+    public <fields>;
+    public <methods>;
+}
+-keep class com.kecson.lame4android.Mp3Recorder{
+    public <fields>;
+    public <methods>;
+}
+-keep class com.kecson.lame4android.Mp3Recorder$OnMaxDurationListener{
+    public <fields>;
+    public <methods>;
+}
+-keep class com.kecson.lame4android.PCMFormat{
+    public <fields>;
+    public <methods>;
+}
+
