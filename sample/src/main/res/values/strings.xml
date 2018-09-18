@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Lame4Android</string>
+    <string name="record_mp3">边录音边转mp3</string>
+    <string name="convert_mp3">录音完成后转码mp3</string>
+</resources>
