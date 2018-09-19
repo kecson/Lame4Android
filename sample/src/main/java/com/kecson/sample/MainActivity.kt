@@ -52,7 +52,7 @@ class MainActivity : AppCompatActivity() {
                     button.isEnabled = true
                 }
                 //限制录音最大10s
-                mMp3Recorder.startRecording(10)
+                mMp3Recorder.startRecording()
 
             } else {
                 mMp3Recorder.stopRecording()

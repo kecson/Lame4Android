@@ -26,6 +26,8 @@ JNIEXPORT void JNICALL Java_com_kecson_lame4android_Lame_init(
     lame_set_num_channels(lame, outChannel);
     lame_set_out_samplerate(lame, outSampleRate);
     lame_set_brate(lame, outBitrate);
+//    lame_set_mode(lame,MONO);
+//    lame_set_VBR(lame, vbr_default);
     lame_set_quality(lame, quality);
     lame_init_params(lame);
 }

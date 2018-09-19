@@ -11,53 +11,61 @@ import android.text.format.DateFormat;
 import android.util.Log;
 
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 
 public class Mp3Recorder {
+    private static final String TAG = "Mp3Recorder";
+    //=======================AudioRecord Default Settings=======================
+    private static final int DEFAULT_AUDIO_SOURCE = MediaRecorder.AudioSource.MIC;
+    /**
+     * 以下三项为默认配置参数。Google Android文档明确表明只有以下3个参数是可以在所有设备上保证支持的。
+     * 44100Hz是当前唯一能保证在所有设备上工作的采样率，在一些设备上还有22050, 16000或11025。
+     */
+    private static final int DEFAULT_SAMPLING_RATE = 44100;//模拟器仅支持从麦克风输入8kHz采样率
+    private static final int DEFAULT_CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO;
+    /**
+     * 下面是对此的封装
+     * private static final int DEFAULT_AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT;
+     */
+    private static final PCMFormat DEFAULT_AUDIO_FORMAT = PCMFormat.PCM_16BIT;
 
-    private static final String TAG = Mp3Recorder.class.getSimpleName();
+    //======================Lame Default Settings=====================
+    private static final int DEFAULT_LAME_MP3_QUALITY = 7;
+    /**
+     * 与DEFAULT_CHANNEL_CONFIG相关，因为是mono单声，所以是1
+     */
+    private static final int DEFAULT_LAME_IN_CHANNEL = 1;
+    /**
+     * Encoded bit rate. MP3 file will be encoded with bit rate 32kbps
+     */
+    private static final int DEFAULT_LAME_MP3_BIT_RATE = 32;
 
-    //    44100Hz是当前唯一能保证在所有设备上工作的采样率，在一些设备上还有22050, 16000或11025。
-    private static final int DEFAULT_SAMPLING_RATE = 44100;
+    //==================================================================
 
+    /**
+     * 自定义 每160帧作为一个周期，通知一下需要进行编码
+     */
     private static final int FRAME_COUNT = 160;
-
-    /* Encoded bit rate. MP3 file will be encoded with bit rate 32kbps */
-    private static final int BIT_RATE = 32;
-
     private AudioRecord mAudioRecord = null;
-
     private int mBufferSize;
-
-    private File mMp3File;
-
-    private RingBuffer mRingBuffer;
-
-    private byte[] mBuffer;
-
-    private FileOutputStream mFos = null;
-
+    private short[] mPCMBuffer;
     private EncodeThread mEncodeThread;
-
-    private int mSamplingRate;
-
-    private int mChannelConfig;
-
-    private PCMFormat mAudioFormat;
-
     private boolean mIsRecording = false;
     private Context mContext;
-    private OnMaxDurationListener mMaxDurationListener;
+    private int mSamplingRate;
+    private int mChannelConfig;
+    private PCMFormat mPCMFormat;
     private int mMaxDurationSecond;
-    private int mVolume;
+    private File mMp3File;
     private Thread mAudioThread;
+    private OnMaxDurationListener mMaxDurationListener;
+    private int mVolume;
 
     public Mp3Recorder(Context context, int samplingRate, int channelConfig, PCMFormat audioFormat) {
         mContext = context.getApplicationContext();
         mSamplingRate = samplingRate;
         mChannelConfig = channelConfig;
-        mAudioFormat = audioFormat;
+        mPCMFormat = audioFormat;
     }
 
     /**
@@ -65,7 +73,19 @@ public class Mp3Recorder {
      * 16 bits pcm
      */
     public Mp3Recorder(Context context) {
-        this(context, DEFAULT_SAMPLING_RATE, AudioFormat.CHANNEL_IN_MONO, PCMFormat.PCM_16BIT);
+        this(context, DEFAULT_SAMPLING_RATE, DEFAULT_CHANNEL_CONFIG, DEFAULT_AUDIO_FORMAT);
+    }
+
+    public PCMFormat getPCMFormat() {
+        return mPCMFormat;
+    }
+
+    public int getChannelConfig() {
+        return mChannelConfig;
+    }
+
+    public int getSamplingRate() {
+        return mSamplingRate;
     }
 
     /**
@@ -96,7 +116,6 @@ public class Mp3Recorder {
         }
         mAudioRecord.startRecording();
         mAudioThread = new Thread() {
-
             @Override
             public void run() {
                 mIsRecording = true;
@@ -117,19 +136,40 @@ public class Mp3Recorder {
                         }
                     }, mMaxDurationSecond * 1000 + 100);
                 }
-
+                //设置线程权限
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO);
                 while (mIsRecording) {
-                    int bytes = mAudioRecord.read(mBuffer, 0, mBufferSize);
-                    if (bytes > 0) {
-                        mRingBuffer.write(mBuffer, bytes);
-                        mVolume = (int) calculateVolume(mBuffer);
-//                        Log.d(TAG, "run: Volume=" + mVolume);
+                    int readSize = mAudioRecord.read(mPCMBuffer, 0, mBufferSize);
+                    if (readSize > 0) {
+                        mEncodeThread.addTask(mPCMBuffer, readSize);
+                        mVolume = calculateRealVolume(mPCMBuffer, readSize);
                     }
                 }
                 release();
 
-
             }
+
+            /**
+             * 此计算方法来自samsung开发范例
+             *
+             * @see {@literal https://developer.samsung.com/technical-doc/view.do?v=T000000086}
+             */
+            private int calculateRealVolume(short[] buffer, int readSize) {
+                int sum = 0;
+                int volume = 0;
+                if (buffer == null) {
+                    return volume;
+                }
+                for (int i = 0; i < readSize; i++) {
+                    sum += buffer[i] * buffer[i];
+                }
+                if (readSize > 0) {
+                    double amplitude = sum / readSize;
+                    volume = (int) Math.sqrt(amplitude);
+                }
+                return volume;
+            }
+
         };
         mAudioThread.start();
 
@@ -148,9 +188,9 @@ public class Mp3Recorder {
 
             // stop the encoding thread and try to wait
             // until the thread finishes its job
-            Message msg = Message.obtain(mEncodeThread.getStopHandler(),
+            Message msg = Message.obtain(mEncodeThread.getHandler(),
                     EncodeThread.PROCESS_STOP);
-            mEncodeThread.getStopHandler().sendMessageAtFrontOfQueue(msg);
+            mEncodeThread.getHandler().sendMessageAtFrontOfQueue(msg);
 
 //                    Log.d(TAG, "waiting for encoding thread");
             mEncodeThread.join();
@@ -158,65 +198,36 @@ public class Mp3Recorder {
         } catch (Exception e) {
             Log.e(TAG, "Failed to join encode thread");
         } finally {
-            if (mFos != null) {
-                try {
-                    mFos.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
+//            if (mFos != null) {
+//                try {
+//                    mFos.close();
+//                } catch (IOException e) {
+//                    e.printStackTrace();
+//                }
+//            }
         }
-    }
-
-    public int getMaxAmplitude() {
-        return mVolume;
     }
 
     /**
-     * 此计算方法来自samsung开发范例
+     * 获取相对音量。 超过最大值时取最大值。
      *
-     * @param buffer
-     * @param readSize
-     * @see {@literal https://developer.samsung.com/technical-doc/view.do?v=T000000086}
+     * @return 音量
      */
-    private int calculateRealVolume(short[] buffer, int readSize) {
-        int sum = 0;
-        int volume = 0;
-        if (buffer == null) {
-            return volume;
-        }
-        for (int i = 0; i < readSize; i++) {
-            sum += buffer[i] * buffer[i];
-        }
-        if (readSize > 0) {
-            double amplitude = sum / readSize;
-            volume = (int) Math.sqrt(amplitude);
-        }
-        return volume;
+    public int getVolume() {
+        return Math.min(mVolume, MAX_VOLUME);
     }
 
+    private static final int MAX_VOLUME = 2000;
 
-    private double calculateVolume(byte[] buffer) {
-        if (buffer == null) {
-            return 0;
-        }
-        double sumVolume = 0.0;
-        double avgVolume = 0.0;
-        double volume = 0.0;
-        for (int i = 0; i < buffer.length; i += 2) {
-            int v1 = buffer[i] & 0xFF;
-            int v2 = buffer[i + 1] & 0xFF;
-            int temp = v1 + (v2 << 8);// 小端
-            if (temp >= 0x8000) {
-                temp = 0xffff - temp;
-            }
-            sumVolume += Math.abs(temp);
-        }
-
-        avgVolume = sumVolume / buffer.length / 2;
-        volume = Math.log10(1 + avgVolume) * 10;
-        return volume;
+    /**
+     * 根据资料假定的最大值。 实测时有时超过此值。
+     *
+     * @return 最大音量值。
+     */
+    public int getMaxVolume() {
+        return MAX_VOLUME;
     }
+
 
     /**
      * @throws IOException
@@ -234,34 +245,37 @@ public class Mp3Recorder {
      */
     private void initAudioRecorder(File mp3File) throws IOException {
 
-        int bytesPerFrame = mAudioFormat.getBytesPerFrame();
-		/* Get number of samples. Calculate the buffer size (round up to the
-		   factor of given frame size) */
-        int frameSize = AudioRecord.getMinBufferSize(mSamplingRate,
-                mChannelConfig, mAudioFormat.getAudioFormat()) / bytesPerFrame;
+        mBufferSize = AudioRecord.getMinBufferSize(DEFAULT_SAMPLING_RATE,
+                DEFAULT_CHANNEL_CONFIG, DEFAULT_AUDIO_FORMAT.getAudioFormat());
+
+        int bytesPerFrame = DEFAULT_AUDIO_FORMAT.getBytesPerFrame();
+        /* Get number of samples. Calculate the buffer size
+         * (round up to the factor of given frame size)
+         * 使能被整除，方便下面的周期性通知
+         * */
+        int frameSize = mBufferSize / bytesPerFrame;
         if (frameSize % FRAME_COUNT != 0) {
-            frameSize = frameSize + (FRAME_COUNT - frameSize % FRAME_COUNT);
-//            Log.d(TAG, "Frame size: " + frameSize);
+            frameSize += (FRAME_COUNT - frameSize % FRAME_COUNT);
+            mBufferSize = frameSize * bytesPerFrame;
         }
 
-        mBufferSize = frameSize * bytesPerFrame;
-
         /* Setup audio recorder */
-        mAudioRecord = new AudioRecord(MediaRecorder.AudioSource.MIC,
-                mSamplingRate, mChannelConfig, mAudioFormat.getAudioFormat(),
+        mAudioRecord = new AudioRecord(DEFAULT_AUDIO_SOURCE,
+                DEFAULT_SAMPLING_RATE, DEFAULT_CHANNEL_CONFIG, DEFAULT_AUDIO_FORMAT.getAudioFormat(),
                 mBufferSize);
-        // Setup RingBuffer. Currently is 10 times size of hardware buffer
-        // Initialize buffer to hold data
-        mRingBuffer = new RingBuffer(10 * mBufferSize);
-        mBuffer = new byte[mBufferSize];
 
-        // Initialize lame buffer
-        // mp3 sampling rate is the same as the recorded pcm sampling rate
-        // The bit rate is 32kbps
-        Lame.init(mSamplingRate, 1, mSamplingRate, BIT_RATE, 7);
+        mPCMBuffer = new short[mBufferSize];
+        /*
+         * Initialize lame buffer
+         * mp3 sampling rate is the same as the recorded pcm sampling rate
+         * The bit rate is 32kbps
+         *
+         */
+        Lame.init(DEFAULT_SAMPLING_RATE, DEFAULT_LAME_IN_CHANNEL, DEFAULT_SAMPLING_RATE, DEFAULT_LAME_MP3_BIT_RATE, DEFAULT_LAME_MP3_QUALITY);
+        // Create and run thread used to encode data
+        // The thread will
 
         if (mp3File == null) {
-
             File directory = mContext.getExternalCacheDir();
             if (!directory.exists()) {
                 directory.mkdirs();
@@ -273,13 +287,10 @@ public class Mp3Recorder {
         } else {
             mMp3File = mp3File;
         }
-        mFos = new FileOutputStream(mMp3File);
-        Log.i(TAG, "mp3 file: " + mMp3File.getPath());
-        // Create and run thread used to encode data
-        // The thread will
-        mEncodeThread = new EncodeThread(mRingBuffer, mFos, mBufferSize);
+
+        mEncodeThread = new EncodeThread(mMp3File, mBufferSize);
         mEncodeThread.start();
-        mAudioRecord.setRecordPositionUpdateListener(mEncodeThread, mEncodeThread.getStopHandler());
+        mAudioRecord.setRecordPositionUpdateListener(mEncodeThread, mEncodeThread.getHandler());
         mAudioRecord.setPositionNotificationPeriod(FRAME_COUNT);
     }
 
