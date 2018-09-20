@@ -50,7 +50,6 @@ public class Mp3Recorder {
     private int mBufferSize;
     private short[] mPCMBuffer;
     private EncodeThread mEncodeThread;
-    private boolean mIsRecording = false;
     private Context mContext;
     private int mSamplingRate;
     private int mChannelConfig;
@@ -60,6 +59,7 @@ public class Mp3Recorder {
     private Thread mAudioThread;
     private OnMaxDurationListener mMaxDurationListener;
     private int mVolume;
+    private final Object mRecordingStateLock = new Object();
 
     public Mp3Recorder(Context context, int samplingRate, int channelConfig, PCMFormat audioFormat) {
         mContext = context.getApplicationContext();
@@ -105,107 +105,111 @@ public class Mp3Recorder {
      * thread.
      */
     public void startRecording(int max_duration_second, File mp3File) throws IOException {
-        if (mIsRecording) return;
-        mMaxDurationSecond = max_duration_second;
-        Log.i(TAG, "Start recording, BufferSize = " + mBufferSize);
-        // Initialize mAudioRecord if it's null.
-        if (mAudioRecord == null) {
-            initAudioRecorder(mp3File);
-        } else {
-            mMp3File = mp3File;
-        }
-        mAudioRecord.startRecording();
-        mAudioThread = new Thread() {
-            @Override
-            public void run() {
-                mIsRecording = true;
-                if (mMaxDurationSecond > 0) {
-                    new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
-                        @Override
-                        public void run() {
-                            if (mIsRecording) {
-                                try {
-                                    stopRecording();
-                                    if (mMaxDurationListener != null) {
-                                        mMaxDurationListener.onMaxDuration(mMaxDurationSecond);
+
+        synchronized (mRecordingStateLock) {
+            if (mAudioRecord != null && isRecording())
+                return;
+
+            mMaxDurationSecond = max_duration_second;
+            Log.i(TAG, "Start recording, BufferSize = " + mBufferSize);
+            // Initialize mAudioRecord if it's null.
+            if (mAudioRecord == null) {
+                initAudioRecorder(mp3File);
+            } else {
+                mMp3File = mp3File;
+            }
+            mAudioRecord.startRecording();
+            mAudioThread = new Thread() {
+                @Override
+                public void run() {
+                    synchronized (mRecordingStateLock) {
+                        if (mMaxDurationSecond > 0) {
+                            new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                                @Override
+                                public void run() {
+                                    if (isRecording()) {
+                                        try {
+                                            stopRecording();
+                                            if (mMaxDurationListener != null) {
+                                                mMaxDurationListener.onMaxDuration(mMaxDurationSecond);
+                                            }
+                                        } catch (IOException e) {
+                                            e.printStackTrace();
+                                        }
                                     }
-                                } catch (IOException e) {
-                                    e.printStackTrace();
+                                }
+                            }, mMaxDurationSecond * 1000 + 100);//delay more 100milli finish
+                        }
+                    }
+
+                    //设置线程权限
+                    android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO);
+                    while (isRecording()) {
+                        if (mAudioRecord != null) {
+                            if (isRecording()) {
+                                int readSize = mAudioRecord.read(mPCMBuffer, 0, mBufferSize);
+                                if (readSize > 0) {
+                                    mEncodeThread.addTask(mPCMBuffer, readSize);
+                                    mVolume = calculateRealVolume(mPCMBuffer, readSize);
                                 }
                             }
                         }
-                    }, mMaxDurationSecond * 1000 + 100);
-                }
-                //设置线程权限
-                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO);
-                while (mIsRecording) {
-                    int readSize = mAudioRecord.read(mPCMBuffer, 0, mBufferSize);
-                    if (readSize > 0) {
-                        mEncodeThread.addTask(mPCMBuffer, readSize);
-                        mVolume = calculateRealVolume(mPCMBuffer, readSize);
+
                     }
+
+                    release();
                 }
-                release();
 
-            }
-
-            /**
-             * 此计算方法来自samsung开发范例
-             *
-             * @see {@literal https://developer.samsung.com/technical-doc/view.do?v=T000000086}
-             */
-            private int calculateRealVolume(short[] buffer, int readSize) {
-                int sum = 0;
-                int volume = 0;
-                if (buffer == null) {
+                /**
+                 * 此计算方法来自samsung开发范例
+                 *
+                 * @see {@literal https://developer.samsung.com/technical-doc/view.do?v=T000000086}
+                 */
+                private int calculateRealVolume(short[] buffer, int readSize) {
+                    int sum = 0;
+                    int volume = 0;
+                    if (buffer == null) {
+                        return volume;
+                    }
+                    for (int i = 0; i < readSize; i++) {
+                        sum += buffer[i] * buffer[i];
+                    }
+                    if (readSize > 0) {
+                        double amplitude = sum / readSize;
+                        volume = (int) Math.sqrt(amplitude);
+                    }
                     return volume;
                 }
-                for (int i = 0; i < readSize; i++) {
-                    sum += buffer[i] * buffer[i];
-                }
-                if (readSize > 0) {
-                    double amplitude = sum / readSize;
-                    volume = (int) Math.sqrt(amplitude);
-                }
-                return volume;
-            }
 
-        };
-        mAudioThread.start();
+            };
+            mAudioThread.start();
+        }
+
 
     }
 
-    private void release() {
-        // release and finalize mAudioRecord
-        try {
 
-            if (mAudioRecord != null) {
-                mAudioRecord.stop();
-                mAudioRecord.release();
+    private void release() {
+        synchronized (mRecordingStateLock) {
+            try {
+                if (isRecording()) {
+                    mAudioRecord.setRecordPositionUpdateListener(null);
+                    mAudioRecord.stop();
+                    mAudioRecord.release();
+                }
+                Handler handler = mEncodeThread != null ? mEncodeThread.getHandler() : null;
+                if (handler != null) {
+                    Message msg = new Message();
+                    msg.what = EncodeThread.PROCESS_STOP;
+                    handler.handleMessage(msg);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            } finally {
                 mAudioRecord = null;
             }
-
-
-            // stop the encoding thread and try to wait
-            // until the thread finishes its job
-            Message msg = Message.obtain(mEncodeThread.getHandler(),
-                    EncodeThread.PROCESS_STOP);
-            mEncodeThread.getHandler().sendMessageAtFrontOfQueue(msg);
-
-//                    Log.d(TAG, "waiting for encoding thread");
-            mEncodeThread.join();
-//                    Log.d(TAG, "done encoding thread");
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to join encode thread");
-        } finally {
-//            if (mFos != null) {
-//                try {
-//                    mFos.close();
-//                } catch (IOException e) {
-//                    e.printStackTrace();
-//                }
-//            }
         }
+
     }
 
     /**
@@ -234,7 +238,6 @@ public class Mp3Recorder {
      */
     public void stopRecording() throws IOException {
         Log.d(TAG, "stop recording");
-        mIsRecording = false;
         release();
     }
 
@@ -245,8 +248,8 @@ public class Mp3Recorder {
      */
     private void initAudioRecorder(File mp3File) throws IOException {
 
-        mBufferSize = AudioRecord.getMinBufferSize(DEFAULT_SAMPLING_RATE,
-                DEFAULT_CHANNEL_CONFIG, DEFAULT_AUDIO_FORMAT.getAudioFormat());
+        mBufferSize = AudioRecord.getMinBufferSize(mSamplingRate,
+                mChannelConfig, mPCMFormat.getAudioFormat());
 
         int bytesPerFrame = DEFAULT_AUDIO_FORMAT.getBytesPerFrame();
         /* Get number of samples. Calculate the buffer size
@@ -271,7 +274,7 @@ public class Mp3Recorder {
          * The bit rate is 32kbps
          *
          */
-        Lame.init(DEFAULT_SAMPLING_RATE, DEFAULT_LAME_IN_CHANNEL, DEFAULT_SAMPLING_RATE, DEFAULT_LAME_MP3_BIT_RATE, DEFAULT_LAME_MP3_QUALITY);
+        Lame.init(mSamplingRate, mChannelConfig, mSamplingRate, DEFAULT_LAME_MP3_BIT_RATE, DEFAULT_LAME_MP3_QUALITY);
         // Create and run thread used to encode data
         // The thread will
 
@@ -299,7 +302,7 @@ public class Mp3Recorder {
     }
 
     public boolean isRecording() {
-        return mIsRecording;
+        return mAudioRecord != null && mAudioRecord.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING;
     }
 
     public interface OnMaxDurationListener {

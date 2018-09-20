@@ -6,7 +6,6 @@ import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.Message;
 
-
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
@@ -45,7 +44,8 @@ public class EncodeThread extends HandlerThread implements AudioRecord.OnRecordP
 
     /**
      * Constructor
-     * @param file file
+     *
+     * @param file       file
      * @param bufferSize bufferSize
      * @throws FileNotFoundException file not found
      */
@@ -72,7 +72,7 @@ public class EncodeThread extends HandlerThread implements AudioRecord.OnRecordP
         mHandler.sendEmptyMessage(PROCESS_STOP);
     }
 
-    public Handler getHandler() {
+    public StopHandler getHandler() {
         check();
         return mHandler;
     }
@@ -86,10 +86,12 @@ public class EncodeThread extends HandlerThread implements AudioRecord.OnRecordP
     public void onPeriodicNotification(AudioRecord recorder) {
         processData();
     }
+
     /**
      * 从缓冲区中读取并处理数据，使用lame编码MP3
+     *
      * @return 从缓冲区中读取的数据的长度
-     * 			缓冲区中没有数据时返回0
+     * 缓冲区中没有数据时返回0
      */
     private int processData() {
         if (mTasks.size() > 0) {
@@ -131,6 +133,8 @@ public class EncodeThread extends HandlerThread implements AudioRecord.OnRecordP
                 Lame.close();
             }
         }
+
+        mTasks.clear();
     }
 
     private List<Task> mTasks = Collections.synchronizedList(new ArrayList<Task>());
