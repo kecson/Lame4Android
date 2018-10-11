@@ -66,6 +66,9 @@ JNIEXPORT jstring JNICALL Java_com_kecson_lame4android_Lame_getLameVersion
 JNIEXPORT void JNICALL Java_com_kecson_lame4android_Lame_encodeFile
         (JNIEnv *, jclass, jstring, jstring);
 
+JNIEXPORT void JNICALL
+Java_com_kecson_lame4android_Lame_setRawBigEndian(JNIEnv *, jclass, jboolean);
+
 #ifdef __cplusplus
 }
 #endif

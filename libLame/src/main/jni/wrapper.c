@@ -1,7 +1,10 @@
+#include <stdbool.h>
 #include "wrapper.h"
 
 
 lame_t lame;
+
+bool bigEndian;
 
 /*
  * Class:     com_kecson_lame4android_Lame
@@ -43,15 +46,28 @@ JNIEXPORT void JNICALL Java_com_kecson_lame4android_Lame_close(
     lame = NULL;
 }
 
+short swap_bytes(short w) {
+    return (0xff00u & (w << 8)) | (0x00ffu & (w >> 8));
+}
+
 /*
  * Class:     com_kecson_lame4android_Lame
  * Method:    encode
  * Signature: ([S[SI[B)I
  */
+short toLittleEndian(bool bigEndian, short c) {
+    if (bigEndian) {
+        return swap_bytes(c);
+    }
+    return c;
+}
+
 JNIEXPORT jint JNICALL Java_com_kecson_lame4android_Lame_encode(
         JNIEnv *env, jclass cls, jshortArray buffer_l, jshortArray buffer_r,
         jint samples, jbyteArray mp3buf) {
     jshort *j_buffer_l = (*env)->GetShortArrayElements(env, buffer_l, NULL);
+
+    *j_buffer_l = toLittleEndian(bigEndian, *j_buffer_l);
 
     jshort *j_buffer_r = (*env)->GetShortArrayElements(env, buffer_r, NULL);
 
@@ -91,20 +107,26 @@ JNIEXPORT jint JNICALL Java_com_kecson_lame4android_Lame_flush(
  * Method:    getLameVersion
  * Signature: ()Ljava/lang/String;
  */
-JNIEXPORT jstring JNICALL Java_com_kecson_lame4android_Lame_getLameVersion(JNIEnv *env, jclass cls) {
+JNIEXPORT jstring JNICALL
+Java_com_kecson_lame4android_Lame_getLameVersion(JNIEnv *env, jclass cls) {
     return get_lame_version();
 }
 
 #define BUFFER_SIZE 8192
 #define be_short(s) ((short) ((unsigned short) (s) << 8) | ((unsigned short) (s) >> 8))
 
+JNIEXPORT void JNICALL Java_com_kecson_lame4android_Lame_setRawBigEndian(JNIEnv *env, jclass cls,
+                                                                         jboolean isBigEndian) {
+    bigEndian = isBigEndian;
+}
+
 int read_samples(FILE *input_file, short *input) {
-    int nb_read;
-    nb_read = fread(input, 1, sizeof(short), input_file) / sizeof(short);
+    int nb_read = fread(input, 1, sizeof(short), input_file) / sizeof(short);
 
     int i = 0;
     while (i < nb_read) {
         input[i] = be_short(input[i]);
+        input[i] = toLittleEndian(bigEndian, input[i]);
         i++;
     }
 

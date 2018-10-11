@@ -25,14 +25,12 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 
-import static com.kecson.lame4android.Lame.encodeFile;
-
 public class LameActivity extends AppCompatActivity {
 
     private static final String TAG = "LameActivity";
     public static final int NUM_CHANNELS = 1;
     public static final int SAMPLE_RATE = 44100;
-    public static final int BITRATE = 128;
+    public static final int BITRATE = 128;//KHz
     public static final int QUALITY = 7;
     private AudioRecord mRecorder;
     private short[] mBuffer;
@@ -53,8 +51,6 @@ public class LameActivity extends AppCompatActivity {
         mTvMp3Path = ((TextView) findViewById(R.id.tv_mp3_path));
         mBtnPlayMp3 = ((Button) findViewById(R.id.btn_open_mp3));
         initRecorder();
-        Lame.init(SAMPLE_RATE, NUM_CHANNELS, SAMPLE_RATE, BITRATE, QUALITY);
-
 
         mButton.setText(startRecordingLabel);
 
@@ -90,13 +86,14 @@ public class LameActivity extends AppCompatActivity {
         mIsRecording = false;
         mRecorder.stop();
         mMp3File = getFile("mp3");
-        /* int result =*/
-        encodeFile(mRawFile.getAbsolutePath(), mMp3File.getAbsolutePath());
+        Lame.init(SAMPLE_RATE, NUM_CHANNELS, SAMPLE_RATE, BITRATE, QUALITY);
+//        Lame.setRawBigEndian(true);
+        Lame.encodeFile(mRawFile.getAbsolutePath(), mMp3File.getAbsolutePath());
+        Lame.close();
+
         Log.d(TAG, "stopRecord() called:" + mMp3File.getPath());
-//        if (result == 0) {
         Toast.makeText(LameActivity.this, "Encoded to " + mMp3File.getName(), Toast.LENGTH_SHORT)
                 .show();
-//        }
 
         if (mRawFile != null && mRawFile.exists()) {
             mRawFile.delete();
@@ -115,7 +112,6 @@ public class LameActivity extends AppCompatActivity {
     @Override
     public void onDestroy() {
         mRecorder.release();
-        Lame.close();
         super.onDestroy();
     }
 

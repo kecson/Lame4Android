@@ -60,6 +60,18 @@ public class Lame {
     public native static String getLameVersion();
 
 
-    public native static void encodeFile(String sourcePath, String targetPath);
+    /**
+     * pcm file convert to mp3 file
+     *
+     * @param sourcePath pcm file path
+     * @param mp3Path    mp3 file path
+     */
+    public native static void encodeFile(String sourcePath, String mp3Path);
+
+    /**
+     * @param isBigEndian true: pcm is big Endian ; false: pcm is little Endian. default is false
+     */
+    public native static void setRawBigEndian(boolean isBigEndian);
+
 
 }
