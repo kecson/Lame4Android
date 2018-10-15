@@ -50,26 +50,31 @@ short swap_bytes(short w) {
     return (0xff00u & (w << 8)) | (0x00ffu & (w >> 8));
 }
 
-/*
- * Class:     com_kecson_lame4android_Lame
- * Method:    encode
- * Signature: ([S[SI[B)I
- */
+
 short toLittleEndian(bool bigEndian, short c) {
-    if (bigEndian) {
+    if (bigEndian == true) {
         return swap_bytes(c);
     }
     return c;
 }
 
+/*
+ * Class:     com_kecson_lame4android_Lame
+ * Method:    encode
+ * Signature: ([S[SI[B)I
+ */
 JNIEXPORT jint JNICALL Java_com_kecson_lame4android_Lame_encode(
         JNIEnv *env, jclass cls, jshortArray buffer_l, jshortArray buffer_r,
         jint samples, jbyteArray mp3buf) {
+
     jshort *j_buffer_l = (*env)->GetShortArrayElements(env, buffer_l, NULL);
-
-    *j_buffer_l = toLittleEndian(bigEndian, *j_buffer_l);
-
     jshort *j_buffer_r = (*env)->GetShortArrayElements(env, buffer_r, NULL);
+
+    if (bigEndian == true) {
+        *j_buffer_l = toLittleEndian(bigEndian, j_buffer_l);
+        *j_buffer_r = toLittleEndian(bigEndian, j_buffer_r);
+    }
+
 
     const jsize mp3buf_size = (*env)->GetArrayLength(env, mp3buf);
     jbyte *j_mp3buf = (*env)->GetByteArrayElements(env, mp3buf, NULL);
@@ -80,7 +85,6 @@ JNIEXPORT jint JNICALL Java_com_kecson_lame4android_Lame_encode(
     (*env)->ReleaseShortArrayElements(env, buffer_l, j_buffer_l, 0);
     (*env)->ReleaseShortArrayElements(env, buffer_r, j_buffer_r, 0);
     (*env)->ReleaseByteArrayElements(env, mp3buf, j_mp3buf, 0);
-
     return result;
 }
 

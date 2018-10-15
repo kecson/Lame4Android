@@ -8,7 +8,7 @@ android {
     compileSdkVersion 28
     buildToolsVersion '28.0.3'
     defaultConfig {
-        minSdkVersion 14
+        minSdkVersion 16
         targetSdkVersion 21
         versionCode 1
         versionName "1.0"
@@ -24,15 +24,12 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
-//    flavorDimensions "default"
-//    productFlavors {
-//        flavor2 {
-//
-//        }
-//        flavor1 {
-//            
-//        }
-//    }
+    repositories {
+        flatDir {
+            dirs 'libs'
+        }
+    }
+
 }
 
 dependencies {
@@ -42,4 +39,10 @@ dependencies {
     implementation 'com.android.support.constraint:constraint-layout:1.1.3'
     implementation 'com.android.support:multidex:1.0.3'
     implementation project(':libLame')
+    FileTree aarFiles = fileTree(include: ['*.aar'], dir: 'libs')
+    aarFiles.files.each { aar ->
+        def subName = aar.name.substring(0, aar.name.lastIndexOf("."))
+        println "implementation aar: $subName"
+        implementation(name: subName, ext: 'aar')
+    }
 }
