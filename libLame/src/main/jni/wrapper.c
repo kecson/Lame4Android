@@ -171,6 +171,7 @@ JNIEXPORT void JNICALL Java_com_kecson_lame4android_Lame_encodeFile(JNIEnv *env,
     fwrite(output, nb_write, 1, output_file);
     LOGD("Flushed %d bytes", nb_write);
 
+    //lame_mp3_tags_fid(lame, output_file);
     fclose(input_file);
     fclose(output_file);
 }

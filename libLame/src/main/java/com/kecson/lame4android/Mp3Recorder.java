@@ -285,7 +285,7 @@ public class Mp3Recorder {
 //            Log.d(TAG, "Created directory");
             }
             String date = DateFormat.format("yyyyMMdd_HHmmss", System.currentTimeMillis()).toString();
-            String mp3FileName = String.format("rec_%s.mp3", date);
+            String mp3FileName = String.format("voice_%s.mp3", date);
             mMp3File = new File(directory, mp3FileName);
         } else {
             mMp3File = mp3File;
